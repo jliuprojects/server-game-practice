@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+    <head>
+        <title>Socket.IO game</title>
+        <script src='//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js'></script>
+    </head>
+    <body>
+        <div id='player1'>
+            <h1 class='playerName'>Player 1</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <button class='tax'>tax</button>
+        </div>
+
+        <div id='player2'>
+            <h1 class='playerName'>Player 2</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <button class='tax'>tax</button>
+        </div>
+
+        <div id='player3'>
+            <h1 class='playerName'>Player 3</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <button class='tax'>tax</button>
+        </div>
+
+        <div id='player4'>
+            <h1 class='playerName'>Player 4</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <button class='tax'>tax</button>
+        </div>
+
+        <div id='player5'>
+            <h1 class='playerName'>Player 5</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <button class='tax'>tax</button>
+        </div>
+
+        <div id='player6'>
+            <h1 class='playerName'>Player 6</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <button class='tax'>tax</button>
+        </div>
+
+        <script src='/socket.io/socket.io.js'></script>
+        <script>
+            var socket = io();
+            socket.on('update-balance', function(data){
+                $('#player' + data.playerId).children('.balance').text(data.balance);
+            });
+            $('.tax').click(function(){
+                socket.emit('tax', {parent: this.parentNode.id});
+            });
+        </script>
+    </body>
+</html>
