@@ -8,7 +8,7 @@ function Player (name, socket, index){
 	this.name = name;
 	this.index = index;
 	this.socket = socket;
-	this.balance = 2;
+	this.balance = 7;
   this.cards = [];
   this.stringCards = '?:?';
 }
@@ -50,14 +50,14 @@ function startGame (){
   }
 }
 
-function playTurn (playersIndex, type){
+function passiveAction(playersIndex, type){
   if (turn == playersIndex && !contestable && !blockable) {
     switch(type) {
       case 'income':
         io.sockets.emit('update-log', {log : players[playersIndex].name + ' took income'});
         players[playersIndex].balance += 1;
         io.sockets.emit('update-balance', {balance: players[playersIndex].balance , playerId: playersIndex + 1});
-        turn++
+        nextTurn();
         break;
       case 'faid':
         io.sockets.emit('update-log', {log : players[playersIndex].name + ' takes foreign aid, does any duke wanna SAY SUMTING?!'});
@@ -69,6 +69,32 @@ function playTurn (playersIndex, type){
         break;
       case 'ambassador':
         io.sockets.emit('update-log', {log : players[playersIndex].name + ' ambassadors'});
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+function targetAction(playersIndex, targetName, type){
+  if (turn == playersIndex && !contestable && !blockable) {
+    var targetIndex;
+    for (var i = 0; i < PLAYERS_PLAYING; i++){
+      if(players[i].name == targetName){
+        targetIndex = i;
+      }
+    }
+    console.log(type);
+    console.log(targetName);
+    switch(type) {
+      case 'coup':
+
+        if (players[playersIndex].balance >= 7){
+          players[playersIndex].balance -= 7;
+          io.sockets.emit('update-log', {log : players[playersIndex].name + ' coups' + targetName});
+          io.sockets.emit('update-balance', {balance: players[playersIndex].balance , playerId: playersIndex + 1});
+          players[targetIndex].socket.emit('pick-lose-card');
+        }
         break;
       default:
         break;
@@ -195,9 +221,9 @@ function dontcontest(socket) {
     }
     switch(contestable.type){
       case 'tax':
-        io.sockets.emit('update-log', {log : 'nobody contests and ' + players[socket.playersIndex].name + ' taxes'});
-        players[socket.playersIndex].balance += 3;
-        io.sockets.emit('update-balance', {balance: players[socket.playersIndex].balance , playerId: socket.playersIndex + 1}); 
+        io.sockets.emit('update-log', {log : 'nobody contests and ' + players[contestable.playersIndex].name + ' taxes'});
+        players[contestable.playersIndex].balance += 3;
+        io.sockets.emit('update-balance', {balance: players[contestable.playersIndex].balance , playerId: contestable.playersIndex + 1}); 
         break;
     }
     contestable = null;
@@ -243,7 +269,11 @@ io.on('connection', function(socket){
   });
 
 	socket.on('passiveAction', function(data){
-    playTurn (this.playersIndex, data.type);
+    passiveAction(this.playersIndex, data.type);
+  });
+
+  socket.on('targetAction', function(data){
+    targetAction(this.playersIndex, data.targetName, data.type);
   });
   
   socket.on('startGame', function(){

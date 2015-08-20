@@ -23,10 +23,10 @@
             <button class="counteraction" id='blockSteal-captain'>block steal - captain</button>
             <button class="counteraction" id='blockFAid'>block foreign aid</button><br><br>
 
-            <button class='targetAction' id='block'>block</button>
-            <button class='targetAction' id='dontblock'>dont block</button>
-            <button class='targetAction' id='contest'>call bullshit</button>
-            <button class='targetAction' id='dontcontest'>let it go</button>
+            <button id='block'>block</button>
+            <button id='dontblock'>dont block</button>
+            <button id='contest'>call bullshit</button>
+            <button id='dontcontest'>let it go</button>
 
         </div>
         
@@ -96,6 +96,10 @@
             });
             $('.passiveAction').click(function(){
                 socket.emit('passiveAction',{type: this.id});
+            });
+            $('.targetAction').click(function(){
+                var target = prompt("Please enter your target", "Harry Potter");
+                socket.emit('targetAction',{type: this.id, targetName:target});
             });
             $('#startGame').click(function(){
                 socket.emit('startGame');
