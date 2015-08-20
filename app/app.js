@@ -10,7 +10,8 @@ function Player (name, socket, index){
 	this.socket = socket;
 	this.balance = 7;
   this.cards = [];
-  this.stringCards = '?:?';
+  this.stringCards = '??';
+  this.hiddenCards = '??';
 }
 
 var PLAYERS_PLAYING = 0;
@@ -19,6 +20,12 @@ var turn = 0;
 var contestable = null;
 var blockable = null;
 var used_deck = [];
+var unused_deck = [];
+
+function shuffle(o){
+    for(var j, x, i = o.length; i; j = Math.floor(Math.random() * i), x = o[--i], o[i] = o[j], o[j] = x);
+    return o;
+}
 
 function startGame (){
   if (!inprogress){
@@ -27,6 +34,7 @@ function startGame (){
               'assassin', 'assassin', 'assassin',
               'contessa','contessa','contessa',
               'ambassador', 'ambassador', 'ambassador'];
+    shuffle(unused_deck);
     turn = 0;
     contestable = null;
     blockable = null;
@@ -34,20 +42,60 @@ function startGame (){
 
     console.log('gameStarted');
     PLAYERS_PLAYING = players.length;
-    for (var i = 0; i < players.length; i++){
-      io.sockets.emit('update-cards', {playerId: i + 1 , cards: players[i].stringCards});
+    for (var i = 0; i < PLAYERS_PLAYING; i++){
+      io.sockets.emit('update-cards', {playerId: i + 1 , cards: players[i].hiddenCards});
       io.sockets.emit('update-balance', {playerId: i + 1, balance: 2});
-      players[i].stringCards = '';
-      for (var j = 0; j < 2; j++){
-        var index = Math.floor(Math.random() * unused_deck.length);
-        players[i].cards.push(unused_deck[index]);
-        players[i].stringCards += ':' + unused_deck[index];
-        unused_deck.splice(index, 1);
-      }
+
+	  players[i].cards.push(unused_deck.pop());
+	  players[i].cards.push(unused_deck.pop());
+
+	  players[i].stringCards = players[i].cards[0] + ':' + players[i].cards[1];
+	  players[i].socket.emit('update-cards', {playerId: i + 1 , cards: players[i].stringCards});
     }
     inprogress = true;
     io.sockets.emit('update-log', {log : 'it is ' + players[turn].name + "'s turn"});
   }
+}
+
+function effect_faid(playersIndex){
+	players[playersIndex].balance += 2;
+    io.sockets.emit('update-balance', {balance: players[playersIndex].balance , playerId: playersIndex + 1});
+}
+
+function effect_tax(playersIndex){
+	players[contestable.playersIndex].balance += 3;
+    io.sockets.emit('update-balance', {balance: players[contestable.playersIndex].balance , playerId: contestable.playersIndex + 1}); 
+}
+
+function effect_ambassador(playersIndex){
+	players[playersIndex].cards.push(unused_deck.pop());
+	players[playersIndex].cards.push(unused_deck.pop());
+	players[playersIndex].stringCards = '';
+	for (var i = 0; i < players[playersIndex].cards.length; i++){
+		players[playersIndex].stringCards += ':' + players[playersIndex].cards[i];
+	}
+	players[playersIndex].socket.emit('update-cards', {playerId: playersIndex + 1 , cards: players[playersIndex].stringCards});
+	players[playersIndex].socket.emit('pick-shuffle-card');
+	players[playersIndex].socket.emit('pick-shuffle-card');
+	nextTurn();
+}
+
+function effect_assassinate(playersIndex, targetIndex){
+
+}
+
+function effect_steal(gainerIndex, loserIndex){
+
+}
+
+function effect_coup(playersIndex, targetIndex){
+	if (players[playersIndex].balance >= 7){
+		players[playersIndex].balance -= 7;
+		io.sockets.emit('update-log', {log : players[playersIndex].name + ' coups' + players[targetIndex].name});
+		io.sockets.emit('update-balance', {balance: players[playersIndex].balance , playerId: playersIndex + 1});
+		players[targetIndex].socket.emit('pick-lose-card');
+		nextTurn();
+    }
 }
 
 function passiveAction(playersIndex, type){
@@ -61,7 +109,7 @@ function passiveAction(playersIndex, type){
         break;
       case 'faid':
         io.sockets.emit('update-log', {log : players[playersIndex].name + ' takes foreign aid, does any duke wanna SAY SUMTING?!'});
-        blockable = {playersIndex: playersIndex, type: 'faid', confirmed: []};
+        blockable = {playersIndex: playersIndex, type: 'faid', confirmed: [], bloackablePlayersIndex: ''};
         break;
       case 'tax':
         io.sockets.emit('update-log', {log : players[playersIndex].name + ' taxes, does any duke wanna SAY SUMTING?!'});
@@ -69,8 +117,10 @@ function passiveAction(playersIndex, type){
         break;
       case 'ambassador':
         io.sockets.emit('update-log', {log : players[playersIndex].name + ' ambassadors'});
+        contestable = {playersIndex: playersIndex, type: 'ambassador', contesablePlayersIndex: '', confirmed: []};
         break;
       default:
+      	console.log('no passive action');
         break;
     }
   }
@@ -87,17 +137,11 @@ function targetAction(playersIndex, targetName, type){
     console.log(type);
     console.log(targetName);
     switch(type) {
-      case 'coup':
-
-        if (players[playersIndex].balance >= 7){
-          players[playersIndex].balance -= 7;
-          io.sockets.emit('update-log', {log : players[playersIndex].name + ' coups' + targetName});
-          io.sockets.emit('update-balance', {balance: players[playersIndex].balance , playerId: playersIndex + 1});
-          players[targetIndex].socket.emit('pick-lose-card');
-        }
-        break;
-      default:
-        break;
+		case 'coup':
+			effect_coup(playersIndex, targetIndex);
+			break;
+		default:
+			break;
     }
   }
 }
@@ -112,24 +156,68 @@ function nextTurn(){
   io.sockets.emit('update-log', {log : 'it is ' + players[turn].name + "'s turn"});
 }
 
-function dontblock (socket) {
-  if (blockable){
-    io.sockets.emit('update-log', {log : players[socket.playersIndex].name + ' does not block'});
-    blockable.confirmed[socket.playersIndex] = true;
-    for (var i = 0; i < PLAYERS_PLAYING; i++){
-      if (players[i] && !blockable.confirmed[i]){
-        return;
-      }
-    }
-    switch(blockable.type){
-      case 'faid':
-        io.sockets.emit('update-log', {log : 'nobody blocks and ' + players[socket.playersIndex].name + ' takes foreign aid'});
-        players[socket.playersIndex].balance += 2;
-        io.sockets.emit('update-balance', {balance: players[socket.playersIndex].balance , playerId: socket.playersIndex + 1}); 
-        break;
-    }
-    nextTurn();
+function updateCards(playersIndex){
+	for(var j = 0; j < PLAYERS_PLAYING; j++){
+		if (playersIndex == j){
+		  players[j].socket.emit('update-cards', {playerId: playersIndex + 1 , cards: players[playersIndex].stringCards});
+		}else{
+		  players[j].socket.emit('update-cards', {playerId: playersIndex + 1 , cards: players[playersIndex].hiddenCards});
+		}
+	}
+}
+
+function destroyCard(card){
+	used_deck.push(card);
+}
+
+function shuffleCard(socket, card){
+	players[socket.playersIndex].stringCards = '';
+	players[socket.playersIndex].hiddenCards = '';
+	for (var i = 0; i < players[socket.playersIndex].cards.length; i++){
+		if (players[socket.playersIndex].cards[i] == card){
+			unused_deck.push(players[socket.playersIndex].cards.splice(i,1));
+			shuffle(unused_deck);
+			break;
+		}
+	}
+
+	for (var i = 0; i < players[socket.playersIndex].cards.length; i++){
+		players[socket.playersIndex].stringCards += ':' + players[socket.playersIndex].cards[i];
+		players[socket.playersIndex].hiddenCards += '?';
+	}
+	updateCards(socket.playersIndex);
+}
+
+function loseCard(socket, card){
+  if (players[socket.playersIndex].cards.length == 1){
+    io.sockets.emit('update-log', {log : players[socket.playersIndex].name + ' LOST THE GAME!!'});
+    io.sockets.emit('update-cards', {playerId: socket.playersIndex + 1 , cards: 'LOST'});
+    players[socket.playersIndex] = null;
+    return;
   }
+  players[socket.playersIndex].stringCards = '';
+  players[socket.playersIndex].hiddenCards = '';
+  for (var i = 0; i < players[socket.playersIndex].cards.length; i++){
+    if (players[socket.playersIndex].cards[i] == card){
+    	destroyCard(players[socket.playersIndex].cards.splice(i,1));
+    	break;
+    }
+  }
+
+  for (var i = 0; i < players[socket.playersIndex].cards.length; i++){
+  	players[socket.playersIndex].stringCards += ':' + players[socket.playersIndex].cards[i];
+  	players[socket.playersIndex].hiddenCards += '?';
+  }
+  updateCards(socket.playersIndex);
+}
+
+function hasCard(player, card){
+  for (var i = 0; i < player.cards.length; i++){
+    if (player.cards[i] == card){
+      return true;
+    }
+  }
+  return false;
 }
 
 function block(socket){
@@ -144,68 +232,65 @@ function block(socket){
   }
 }
 
-function loseCard(socket, card){
-  if (players[socket.playersIndex].cards.length == 1){
-    io.sockets.emit('update-log', {log : players[socket.playersIndex].name + ' LOST THE GAME!!'});
-    io.sockets.emit('update-cards', {playerId: socket.playersIndex + 1 , cards: 'LOST'});
-    players[socket.playersIndex] = null;
-    return;
-  }
-  players[socket.playersIndex].stringCards = '';
-  for (var i = 0; i < players[socket.playersIndex].cards.length; i++){
-    if (players[socket.playersIndex].cards[i] == card){
-      players[socket.playersIndex].cards = players[socket.playersIndex].cards.splice(i,1);
-    }
-    players[socket.playersIndex].stringCards = ':' + players[socket.playersIndex].cards[0];
-  }
-  for(var j = 0; j < PLAYERS_PLAYING; j++){
-    if (socket.playersIndex == j){
-      players[j].socket.emit('update-cards', {playerId: socket.playersIndex + 1 , cards: players[socket.playersIndex].stringCards});
-    }else{
-      players[j].socket.emit('update-cards', {playerId: socket.playersIndex + 1 , cards: 'lost card'});
-    }
-  }
-}
-
-function hasCard(player, card){
-  for (var i = 0; i < player.cards.length; i++){
-    if (player.cards[i] == card){
-      return true;
-    }
-  }
-  return false;
-}
-
 function contest(socket){
   if (contestable){
     io.sockets.emit('update-log', {log : players[socket.playersIndex].name + ' CONTESTS!!'});
     var loser;
     switch(contestable.type){
-      case 'block-faid':
-        if (socket.playersIndex != contestable.contesablePlayersIndex)
-          return;
-        
-        if (hasCard(players[contestable.playersIndex], 'duke')){
-          loser = socket.playersIndex;
-        }else{
-          loser = contestable.playersIndex;
-          players[socket.playersIndex].balance += 2;
-          io.sockets.emit('update-balance', {balance: players[socket.playersIndex].balance , playerId: socket.playersIndex + 1}); 
-        }
-        break;
+    	case 'block-faid':
+	        if (socket.playersIndex != contestable.contesablePlayersIndex){
+	        	io.sockets.emit('update-log', {log : 'its not your turn ' + players[socket.playersIndex].name + ', you cannot contest'});
+	        	return;
+	        }
+	        
+	        if (hasCard(players[contestable.playersIndex], 'duke')){
+	          loser = socket.playersIndex;
+	        }else{
+	          loser = contestable.playersIndex;
 
-      case 'tax':
-        if (hasCard(players[contestable.playersIndex], 'duke')){
-          loser = socket.playersIndex;
-          players[contestable.playersIndex].balance += 3;
-          io.sockets.emit('update-balance', {balance: players[contestable.playersIndex].balance , playerId: contestable.playersIndex + 1}); 
-        }else{
-          loser = contestable.playersIndex;
-        }
-        break;
+	          effect_faid(socket.playersIndex);
+	        }
+	        break;
+
+    	case 'tax':
+	        if (hasCard(players[contestable.playersIndex], 'duke')){
+	        	loser = socket.playersIndex;
+	        	effect_tax(contestable.playersIndex);
+	        }else{
+	        	loser = contestable.playersIndex;
+	        }
+	        break;
+
+	    case 'ambassador':
+	    	if (hasCard(players[contestable.playersIndex], 'ambassador')){
+	        	loser = socket.playersIndex;
+	        	effect_ambassador(contestable.playersIndex);
+	        }else{
+	        	loser = contestable.playersIndex;
+	        }
+	    	break;
     }
     io.sockets.emit('update-log', {log : players[loser].name + ' LOST!! Pick a card to discard.'});
     players[loser].socket.emit('pick-lose-card');
+    nextTurn();
+  }
+}
+
+function dontblock (socket) {
+  if (blockable){
+    io.sockets.emit('update-log', {log : players[socket.playersIndex].name + ' does not block'});
+    blockable.confirmed[socket.playersIndex] = true;
+    for (var i = 0; i < PLAYERS_PLAYING; i++){
+      if (players[i] && !blockable.confirmed[i]){
+        return;
+      }
+    }
+    switch(blockable.type){
+      case 'faid':
+        io.sockets.emit('update-log', {log : 'nobody blocks and ' + players[socket.playersIndex].name + ' takes foreign aid'});
+        effect_faid(socket.playersIndex);
+        break;
+    }
     nextTurn();
   }
 }
@@ -220,11 +305,13 @@ function dontcontest(socket) {
       }
     }
     switch(contestable.type){
-      case 'tax':
-        io.sockets.emit('update-log', {log : 'nobody contests and ' + players[contestable.playersIndex].name + ' taxes'});
-        players[contestable.playersIndex].balance += 3;
-        io.sockets.emit('update-balance', {balance: players[contestable.playersIndex].balance , playerId: contestable.playersIndex + 1}); 
-        break;
+      	case 'tax':
+        	io.sockets.emit('update-log', {log : 'nobody contests and ' + players[contestable.playersIndex].name + ' taxes'});
+        	effect_tax(contestable.playersIndex);
+        	break;
+      	case 'ambassador':
+	       	effect_ambassador(contestable.playersIndex);
+	    	break;
     }
     contestable = null;
     nextTurn();
@@ -300,7 +387,12 @@ io.on('connection', function(socket){
     loseCard(this, data.card);
   });
 
+  socket.on('shuffle-card', function(data){
+    shuffleCard(this, data.card);
+  });
+
   socket.on('show-my-cards', function(data){
+  	//not used i dont think
     this.emit('update-cards', {playerId: this.playersIndex + 1 , cards: players[this.playersIndex].stringCards});
     console.log('name saved');
   });
