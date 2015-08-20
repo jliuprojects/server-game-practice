@@ -8,7 +8,7 @@ function Player (name, socket, index){
 	this.name = name;
 	this.index = index;
 	this.socket = socket;
-	this.balance = 7;
+	this.balance = 2;
   this.cards = [];
   this.stringCards = '??';
   this.hiddenCards = '??';
@@ -85,8 +85,15 @@ function effect_assassinate(playersIndex, targetIndex){
 }
 
 function effect_steal(gainerIndex, loserIndex){
+	var amount = Math.min(2,players[loserIndex].balance);
 
+	players[gainerIndex].balance += amount;
+	players[loserIndex].balance -= amount;
+	
+	io.sockets.emit('update-balance', {balance: players[gainerIndex].balance , playerId: gainerIndex + 1}); 
+	io.sockets.emit('update-balance', {balance: players[loserIndex].balance , playerId: loserIndex + 1}); 
 }
+
 
 function effect_coup(playersIndex, targetIndex){
 	if (players[playersIndex].balance >= 7){
@@ -113,11 +120,11 @@ function passiveAction(playersIndex, type){
         break;
       case 'tax':
         io.sockets.emit('update-log', {log : players[playersIndex].name + ' taxes, does any duke wanna SAY SUMTING?!'});
-        contestable = {playersIndex: playersIndex, type: 'tax', contesablePlayersIndex: '', confirmed: []};
+        contestable = {playersIndex: playersIndex, type: 'tax', contestablePlayersIndex: '', confirmed: []};
         break;
       case 'ambassador':
         io.sockets.emit('update-log', {log : players[playersIndex].name + ' ambassadors'});
-        contestable = {playersIndex: playersIndex, type: 'ambassador', contesablePlayersIndex: '', confirmed: []};
+        contestable = {playersIndex: playersIndex, type: 'ambassador', contestablePlayersIndex: '', confirmed: []};
         break;
       default:
       	console.log('no passive action');
@@ -140,6 +147,10 @@ function targetAction(playersIndex, targetName, type){
 		case 'coup':
 			effect_coup(playersIndex, targetIndex);
 			break;
+		case 'steal':
+			io.sockets.emit('update-log', {log : players[playersIndex].name + ' steals from ' + players[targetIndex].name + ' do you block or contest?'});
+			bloackable = {playersIndex: playersIndex, type: 'steal', confirmed: [], bloackablePlayersIndex: targetIndex};
+			contestable = {playersIndex: playersIndex, type: 'steal', confirmed: [], contestablePlayersIndex: targetIndex};
 		default:
 			break;
     }
@@ -170,22 +181,34 @@ function destroyCard(card){
 	used_deck.push(card);
 }
 
-function shuffleCard(socket, card){
-	players[socket.playersIndex].stringCards = '';
-	players[socket.playersIndex].hiddenCards = '';
-	for (var i = 0; i < players[socket.playersIndex].cards.length; i++){
-		if (players[socket.playersIndex].cards[i] == card){
-			unused_deck.push(players[socket.playersIndex].cards.splice(i,1));
+function shuffleCard(playersIndex, card){
+	players[playersIndex].stringCards = '';
+	players[playersIndex].hiddenCards = '';
+	for (var i = 0; i < players[playersIndex].cards.length; i++){
+		if (players[playersIndex].cards[i] == card){
+			unused_deck.push(players[playersIndex].cards.splice(i,1));
 			shuffle(unused_deck);
 			break;
 		}
 	}
 
-	for (var i = 0; i < players[socket.playersIndex].cards.length; i++){
-		players[socket.playersIndex].stringCards += ':' + players[socket.playersIndex].cards[i];
-		players[socket.playersIndex].hiddenCards += '?';
+	for (var i = 0; i < players[playersIndex].cards.length; i++){
+		players[playersIndex].stringCards += ':' + players[playersIndex].cards[i];
+		players[playersIndex].hiddenCards += '?';
 	}
-	updateCards(socket.playersIndex);
+	updateCards(playersIndex);
+}
+
+function getCard(playersIndex, card){
+	players[playersIndex].cards.push(unused_deck.pop());
+
+	players[playersIndex].stringCards = '';
+	players[playersIndex].hiddenCards = '';
+	for (var i = 0; i < players[playersIndex].cards.length; i++){
+		players[playersIndex].stringCards += ':' + players[playersIndex].cards[i];
+		players[playersIndex].hiddenCards += '?';
+	}
+	updateCards(playersIndex);
 }
 
 function loseCard(socket, card){
@@ -220,31 +243,46 @@ function hasCard(player, card){
   return false;
 }
 
-function block(socket){
+function block(socket, card){
   if (blockable){
+  	if (blockable.blockablePlayersIndex != '' && socket.playersIndex != blockable.blockablePlayersIndex){
+    	io.sockets.emit('update-log', {log : 'this dosnt involve you, ' + players[socket.playersIndex].name + ', you cannot contest'});
+    	return;
+    }
     io.sockets.emit('update-log', {log : players[socket.playersIndex].name + ' blocks, do you contest?'});
     switch(blockable.type){
       case 'faid':
         contestable = {playersIndex: socket.playersIndex, type: 'block-faid', contesablePlayersIndex: blockable.playersIndex, confirmed: []};
         blockable = null;
         break;
+      case 'steal':
+      	var type = '';
+      	if (card == 'captain'){
+      		type = 'block-steal-captain';
+      	}else {
+      		type = 'block-steal-ambassador';
+      	}
+      	contestable = {playersIndex: socket.playersIndex, type: type, contesablePlayersIndex: blockable.playersIndex, confirmed: []};
+        blockable = null;
     }
   }
 }
 
 function contest(socket){
   if (contestable){
+  	if (contestable.contestablePlayersIndex != '' && socket.playersIndex != contestable.contesablePlayersIndex){
+    	io.sockets.emit('update-log', {log : 'this dosnt involve you, ' + players[socket.playersIndex].name + ', you cannot contest'});
+    	return;
+    }
     io.sockets.emit('update-log', {log : players[socket.playersIndex].name + ' CONTESTS!!'});
+
     var loser;
     switch(contestable.type){
     	case 'block-faid':
-	        if (socket.playersIndex != contestable.contesablePlayersIndex){
-	        	io.sockets.emit('update-log', {log : 'its not your turn ' + players[socket.playersIndex].name + ', you cannot contest'});
-	        	return;
-	        }
-	        
 	        if (hasCard(players[contestable.playersIndex], 'duke')){
 	          loser = socket.playersIndex;
+	          shuffleCard(contestable.playersIndex, 'duke');
+	          getCard(contestable.playersIndex);
 	        }else{
 	          loser = contestable.playersIndex;
 
@@ -253,9 +291,13 @@ function contest(socket){
 	        break;
 
     	case 'tax':
+    	console.log("ASDFASDFASDFSDAFDASF");
 	        if (hasCard(players[contestable.playersIndex], 'duke')){
 	        	loser = socket.playersIndex;
 	        	effect_tax(contestable.playersIndex);
+
+	        	shuffleCard(contestable.playersIndex, 'duke');
+	            getCard(contestable.playersIndex);
 	        }else{
 	        	loser = contestable.playersIndex;
 	        }
@@ -265,9 +307,43 @@ function contest(socket){
 	    	if (hasCard(players[contestable.playersIndex], 'ambassador')){
 	        	loser = socket.playersIndex;
 	        	effect_ambassador(contestable.playersIndex);
+	        	shuffleCard(contestable.playersIndex, 'ambassador');
+	            getCard(contestable.playersIndex);
 	        }else{
 	        	loser = contestable.playersIndex;
 	        }
+	    	break;
+
+	    case 'steal':
+	    	if (hasCard(players[contestable.playersIndex], 'captain')){
+	    		loser = socket.playersIndex;
+	    		effect_steal(contesable.playersIndex, socket.playersIndex);
+	    		shuffleCard(contestable.playersIndex, 'captain');
+	            getCard(contestable.playersIndex);
+	    	}else{
+	    		loser = contestable.playersIndex;
+	    	}
+	    	break;
+
+	    case 'block-steal-captain':
+	    	if (hasCard(players[contestable.playersIndex], 'captain')){
+	    		loser = socket.playersIndex;
+	    		shuffleCard(contestable.playersIndex, 'captain');
+	            getCard(contestable.playersIndex);
+	    	}else{
+	    		loser = contestable.playersIndex;
+	    		effect_steal(socket.playersIndex, contesable.playersIndex);
+	    	}
+	    	break;
+	    case 'block-steal-ambassador':
+	    	if (hasCard(players[contestable.playersIndex], 'ambassador')){
+	    		loser = socket.playersIndex;
+	    		shuffleCard(contestable.playersIndex, 'ambassador');
+	            getCard(contestable.playersIndex);
+	    	}else{
+	    		loser = contestable.playersIndex;
+	    		effect_steal(socket.playersIndex, contesable.playersIndex);
+	    	}
 	    	break;
     }
     io.sockets.emit('update-log', {log : players[loser].name + ' LOST!! Pick a card to discard.'});
@@ -278,6 +354,10 @@ function contest(socket){
 
 function dontblock (socket) {
   if (blockable){
+  	if (blockable.blockablePlayersIndex != '' && socket.playersIndex != blockable.blockablePlayersIndex){
+    	io.sockets.emit('update-log', {log : 'this dosnt involve you, ' + players[socket.playersIndex].name + ', you cannot contest'});
+    	return;
+    }
     io.sockets.emit('update-log', {log : players[socket.playersIndex].name + ' does not block'});
     blockable.confirmed[socket.playersIndex] = true;
     for (var i = 0; i < PLAYERS_PLAYING; i++){
@@ -287,33 +367,47 @@ function dontblock (socket) {
     }
     switch(blockable.type){
       case 'faid':
-        io.sockets.emit('update-log', {log : 'nobody blocks and ' + players[socket.playersIndex].name + ' takes foreign aid'});
+        io.sockets.emit('update-log', {log : 'nobody blocks and ' + players[bloackable.playersIndex].name + ' takes foreign aid'});
         effect_faid(socket.playersIndex);
         break;
+      case 'steal':
+      	io.sockets.emit('update-log', {log : players[blockable.blockablePlayersIndex].name + ' does not block and ' + players[bloackable.playersIndex].name + ' steals 2'});
+        effect_steal(blockable.playersIndex, bloackable.blockablePlayersIndex);
+        break;
     }
-    nextTurn();
+    blockable = null;
   }
 }
 
 function dontcontest(socket) {
   if (contestable){
-    io.sockets.emit('update-log', {log : players[socket.playersIndex].name + ' does not contest'});
-    contestable.confirmed[socket.playersIndex] = true;
-    for (var i = 0; i < PLAYERS_PLAYING; i++){
-      if (players[i] && !contestable.confirmed[i]){
-        return;
-      }
+  	if (contestable.contestablePlayersIndex != '' && socket.playersIndex != contestable.contestablePlayersIndex){
+    	io.sockets.emit('update-log', {log : 'this dosnt involve you, ' + players[socket.playersIndex].name + ', you cannot contest'});
+    	return;
     }
+    io.sockets.emit('update-log', {log : players[socket.playersIndex].name + ' does not contest'});
+    
+    if (contestable.contestablePlayersIndex == ''){
+    	contestable.confirmed[socket.playersIndex] = true;
+	    for (var i = 0; i < PLAYERS_PLAYING; i++){
+	      if (players[i] && !contestable.confirmed[i]){
+	        return;
+	      }
+	    }
+	}
     switch(contestable.type){
       	case 'tax':
         	io.sockets.emit('update-log', {log : 'nobody contests and ' + players[contestable.playersIndex].name + ' taxes'});
         	effect_tax(contestable.playersIndex);
         	break;
       	case 'ambassador':
+      		io.sockets.emit('update-log', {log : 'nobody contests and ' + players[contestable.playersIndex].name + ' ambassadors'});
 	       	effect_ambassador(contestable.playersIndex);
 	    	break;
+	    case 'steal':
+	      	io.sockets.emit('update-log', {log : players[contestable.contestablePlayersIndex].name + ' does not contest and ' + players[contestable.playersIndex].name + ' steals 2'});
+	        effect_steal(contestable.playersIndex, contestable.contestablePlayersIndex);
     }
-    contestable = null;
     nextTurn();
   }
 }
@@ -371,8 +465,20 @@ io.on('connection', function(socket){
     dontblock(this);
   });
 
-  socket.on('block', function(){
-    block(this);
+  socket.on('blockFAid', function(){
+    block(this, {card: 'duke'});
+  });
+
+  socket.on('blockAssassinate', function(){
+    block(this, {card: 'contessa'});
+  });
+
+  socket.on('blockSteal-captain', function(){
+    block(this, {card: 'captain'});
+  });
+
+  socket.on('blockSteal-ambassador', function(){
+    block(this, {card: 'ambassador'});
   });
 
   socket.on('contest', function(){
@@ -388,7 +494,7 @@ io.on('connection', function(socket){
   });
 
   socket.on('shuffle-card', function(data){
-    shuffleCard(this, data.card);
+    shuffleCard(this.playersIndex, data.card);
   });
 
   socket.on('show-my-cards', function(data){

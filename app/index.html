@@ -23,7 +23,6 @@
             <button class="counteraction" id='blockSteal-captain'>block steal - captain</button>
             <button class="counteraction" id='blockFAid'>block foreign aid</button><br><br>
 
-            <button id='block'>block</button>
             <button id='dontblock'>dont block</button>
             <button id='contest'>call bullshit</button>
             <button id='dontcontest'>let it go</button>
@@ -94,7 +93,7 @@
                 var card = prompt("Please pick a card to lose", "duke");
                 socket.emit('lose-card',{card: card});
             });
-            socket.on('pick-lose-card', function(data){
+            socket.on('shuffle-card', function(data){
                 var card = prompt("Please pick a card to put back in the deck", "duke");
                 socket.emit('shuffle-card',{card: card});
             });
@@ -109,8 +108,17 @@
                 socket.emit('startGame');
                 // socket.emit('show-my-cards', {name: name});
             });
-            $('#block').click(function(){
-                socket.emit('block');
+            $('#blockFAid').click(function(){
+                socket.emit('blockFAid');
+            });
+            $('#blockAssassinate').click(function(){
+                socket.emit('blockAssassinate');
+            });
+            $('#blockSteal-captain').click(function(){
+                socket.emit('blockSteal-captain');
+            });
+            $('#blockSteal-ambassador').click(function(){
+                socket.emit('blockSteal-ambassador');
             });
             $('#dontblock').click(function(){
                 socket.emit('dontblock');
