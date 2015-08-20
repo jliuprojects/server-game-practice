@@ -1,0 +1,7 @@
+.actions{
+	position: relative;
+}
+.playerDiv {
+	position: relative;
+	display: inline-block;
+}
