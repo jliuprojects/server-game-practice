@@ -93,7 +93,7 @@
                 var card = prompt("Please pick a card to lose", "duke");
                 socket.emit('lose-card',{card: card});
             });
-            socket.on('shuffle-card', function(data){
+            socket.on('pick-shuffle-card', function(data){
                 var card = prompt("Please pick a card to put back in the deck", "duke");
                 socket.emit('shuffle-card',{card: card});
             });
