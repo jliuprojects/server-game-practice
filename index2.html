@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+    <head>
+        <title>Socket.IO game</title>
+        <script src='//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js'></script>
+        <link rel="stylesheet" type="text/css" href="styling">
+    </head>
+    <body>
+        <div class="actions">
+            <button id='startGame'>START GAME</button>
+
+            <button class="passiveAction" id='income'>income</button>
+            <button class="passiveAction" id='faid'>foreign aid</button>
+            <button class="targetAction" id='coup'>coup</button><br><br>
+
+            <button class="passiveAction" id='tax'>tax</button>
+            <button class="targetAction" id='steal'>steal</button>
+            <button class="passiveAction" id='ambassador'>ambassador</button>
+            <button class="targetAction" id='assassinate'>assassinate</button><br><br>
+
+            <button class="counteraction" id='blockAssassinate'>block assassination</button>
+            <button class="counteraction" id='blockSteal-ambassador'>block steal - ambassador</button>
+            <button class="counteraction" id='blockSteal-captain'>block steal - captain</button>
+            <button class="counteraction" id='blockFAid'>block foreign aid</button><br><br>
+
+            <button id='dontblock'>dont block</button>
+            <button id='contest'>call bullshit</button>
+            <button id='dontcontest'>let it go</button>
+
+        </div>
+        
+        <div class='playerDiv' id='player1'>
+            <h1 class='playerName'>Player 1</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <h3 class="cards"></h3>
+        </div>
+
+        <div class='playerDiv' id='player2'>
+            <h1 class='playerName'>Player 2</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <h3 class="cards"></h3>
+        </div>
+
+        <div class='playerDiv' id='player3'>
+            <h1 class='playerName'>Player 3</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <h3 class="cards"></h3>
+        </div>
+
+        <div class='playerDiv' id='player4'>
+            <h1 class='playerName'>Player 4</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <h3 class="cards"></h3>
+        </div>
+
+        <div class='playerDiv' id='player5'>
+            <h1 class='playerName'>Player 5</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <h3 class="cards"></h3>
+        </div>
+
+        <div class='playerDiv' id='player6'>
+            <h1 class='playerName'>Player 6</h1>
+            <h2>Balance:</h2><h2 class='balance'>null</h2>
+            <h3 class="cards"></h3>
+        </div>
+
+        <div class='log' style="overflow-y: scroll; height:400px;">
+            <h2>TURN LOG</h2>
+            <p></p>
+        </div>
+
+        <script src='/socket.io/socket.io.js'></script>
+        <script>
+            var name = prompt("Please enter your name", "Harry Potter");
+            var socket = io();
+            
+
+            socket.emit('save-name', {name: name});
+            socket.on('update-balance', function(data){
+                $('#player' + data.playerId).children('.balance').text(data.balance);
+            });
+            socket.on('update-name', function(data){
+                $('#player' + data.playerId).children('.playerName').text(data.name);
+            });
+            socket.on('update-cards', function(data){
+                $('#player' + data.playerId).children('.cards').text(data.cards);
+            });
+            socket.on('update-log', function(data){
+                $('.log').append('<p>' + $('.log').children('p').html() + data.log + '</p>');
+            });
+            socket.on('pick-lose-card', function(data){
+                var card = prompt("Please pick a card to lose", "duke");
+                socket.emit('lose-card',{card: card});
+            });
+            socket.on('pick-shuffle-card', function(data){
+                var card = prompt("Please pick a card to put back in the deck", "duke");
+                socket.emit('shuffle-card',{card: card});
+            });
+            $('.passiveAction').click(function(){
+                socket.emit('passiveAction',{type: this.id});
+            });
+            $('.targetAction').click(function(){
+                var target = prompt("Please enter your target", "Harry Potter");
+                socket.emit('targetAction',{type: this.id, targetName:target});
+            });
+            $('#startGame').click(function(){
+                socket.emit('startGame');
+                // socket.emit('show-my-cards', {name: name});
+            });
+            $('#blockFAid').click(function(){
+                socket.emit('blockFAid');
+            });
+            $('#blockAssassinate').click(function(){
+                socket.emit('blockAssassinate');
+            });
+            $('#blockSteal-captain').click(function(){
+                socket.emit('blockSteal-captain');
+            });
+            $('#blockSteal-ambassador').click(function(){
+                socket.emit('blockSteal-ambassador');
+            });
+            $('#dontblock').click(function(){
+                socket.emit('dontblock');
+            });
+            $('#contest').click(function(){
+                socket.emit('contest');
+            });
+            $('#dontcontest').click(function(){
+                socket.emit('dontcontest');
+            });
+        </script>
+    </body>
+</html>
