@@ -9,6 +9,7 @@
         <div class="actions">
             <button id='startGame'>START GAME</button>
             <button id='turn'>DO MOVE</button>
+            <button id='reply'>REPLY</button>
         </div>
         
         <div id="players-container">
@@ -57,7 +58,12 @@
                 if (action == "coup" || action == "assassinate" || action == "steal"){
                     target = prompt("Please enter name of target", "karim");
                 }
-                socket.emit('player-action', {action: action, target: target});
+                socket.emit('player-action', {action: action, targetName: target});
+            });
+
+            $('#reply').click(function(){
+                var reply = prompt("Please enter your reply", "challenge/block/block-captain/block-ambassador");
+                socket.emit('player-reply', {reply: reply});
             });
             
         </script>

@@ -68,8 +68,9 @@ function Game (players, deck){
   this.playersReplied = 0;
   this.playersLeft = players.length;
   this.started = false;
-  this.turnAction = {actioner: "", action: "", target: ""};
+  this.turnAction = {actioner: "", action: "", targetName: ""};
   this.turnIndex = 0;
+  this.midturn = false;
 }
 
 Game.prototype.startGame = function (){
@@ -109,18 +110,24 @@ Game.prototype.updateClient = function (){
 
 Game.prototype.playerAction = function (actioner, action, targetName){
   this.turnAction = {actioner: actioner, action: action, targetName: targetName};
-  io.sockets.emit('update-log', {log: actioner.name + " " + action + " " + targetName})
+  io.sockets.emit('update-log', {log: actioner.name + " " + action + " " + targetName});
 }
 
-Game.prototype.playerReply = function (reply, card){
-  if (reply == "block"){
+Game.prototype.playerReply = function (replier, reply, card){
+  if (reply == "block" && (replier.name == this.turnAction.targetName || this.turnAction.action == "tax")){
     if (this.turnAction.action == "assassinate"){
-
-    }else if
+      this.turnAction = {actioner: replier, action: "block-assassinate", targetName: this.turnAction.actioner.name};
+      io.sockets.emit('update-log', {log: this.turnAction.actioner.name + " " + this.turnAction.action + " " + this.turnAction.targetName});
+    }else if (this.turnAction.action == "tax"){
+    }
   }else if (reply == "challenge"){
 
-  }else{
-
+  }else if (reply == "nochallenge"){
+    this.playersReplied++;
+    if (this.playersReplied == this.playersLeft - 1){
+      this.playersReplied = 0;
+      io.sockets.emit('update-log', {log: "no challenges, next players turn"});
+    }
   }
 }
 
@@ -153,6 +160,10 @@ io.on('connection', function(socket){
 
   socket.on('player-action', function(data){
     game.playerAction(this.player, data.action, data.targetName);
+  });
+
+  socket.on('player-reply', function(data){
+    game.playerReply(this.player, data.reply);
   });
 
   socket.on('disconnect', function(){
